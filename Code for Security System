@@ -1,1 +1,200 @@
+#include <LiquidCrystal.h>
+
+// LCD pins: RS, E, D4, D5, D6, D7
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Ultrasonic sensor pins
+const int trigPin = 9;
+const int echoPin = 8;
+
+// Buttons
+const int armButtonPin   = 6;
+const int disarmButtonPin = 7;
+
+// LEDs
+const int greenLedPin = 13; // system armed
+const int redLedPin   = 10; // alarm / countdown
+
+// Logic settings
+const long countdownTimeMs = 10000;   // 10 seconds
+const int  triggerDistance = 20;      // cm (distance that triggers countdown)
+
+bool systemArmed   = false;
+bool countingDown  = false;
+bool alarmActive   = false;
+
+unsigned long countdownStartTime = 0;
+
+// Helper: read distance from HC-SR04 in cm
+long getDistanceCm() {
+  // Send trig pulse
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  // Read echo pulse
+  long duration = pulseIn(echoPin, HIGH, 30000); // timeout ~30ms
+
+  if (duration == 0) {
+    // No echo detected
+    return -1;
+  }
+
+  // Speed of sound ~343 m/s → 0.0343 cm/us
+  long distance = duration * 0.0343 / 2;
+  return distance;
+}
+
+void showReadyScreen() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("System Ready");
+  lcd.setCursor(0, 1);
+  lcd.print("Press ARM");
+}
+
+void showArmedScreen() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("System ARMED");
+  lcd.setCursor(0, 1);
+  lcd.print("Watching...");
+}
+
+void showCountdown(long msLeft) {
+  int secondsLeft = msLeft / 1000;
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("INTRUDER!");
+  lcd.setCursor(0, 1);
+  lcd.print("T-");
+  lcd.print(secondsLeft);
+  lcd.print(" sec");
+}
+
+void showAlarmScreen() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("!!! ALARM !!!");
+  lcd.setCursor(0, 1);
+  lcd.print("Call Police");
+}
+
+void disarmSystem() {
+  systemArmed  = false;
+  countingDown = false;
+  alarmActive  = false;
+
+  digitalWrite(greenLedPin, LOW);
+  digitalWrite(redLedPin, LOW);
+
+  showReadyScreen();
+}
+
+void setup() {
+  // LCD
+  lcd.begin(16, 2);
+  showReadyScreen();
+
+  // Pins
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  pinMode(armButtonPin, INPUT);    // using external 10k pull-down
+  pinMode(disarmButtonPin, INPUT); // using external 10k pull-down
+
+  pinMode(greenLedPin, OUTPUT);
+  pinMode(redLedPin, OUTPUT);
+
+  digitalWrite(greenLedPin, LOW);
+  digitalWrite(redLedPin, LOW);
+
+  // Optional for debugging
+  Serial.begin(9600);
+}
+
+void loop() {
+  // Read buttons
+  bool armPressed    = digitalRead(armButtonPin) == HIGH;
+  bool disarmPressed = digitalRead(disarmButtonPin) == HIGH;
+
+  // DISARM always has priority
+  if (disarmPressed) {
+    disarmSystem();
+    delay(200); // simple debounce
+    return;
+  }
+
+  // ARM button
+  if (armPressed && !systemArmed) {
+    systemArmed = true;
+    countingDown = false;
+    alarmActive = false;
+
+    digitalWrite(greenLedPin, HIGH); // system armed
+    digitalWrite(redLedPin, LOW);
+
+    showArmedScreen();
+    delay(200); // debounce
+  }
+
+  // If system is not armed, nothing else happens
+  if (!systemArmed) {
+    return;
+  }
+
+  // If already in alarm state, just blink red LED
+  if (alarmActive) {
+    digitalWrite(redLedPin, HIGH);
+    delay(200);
+    digitalWrite(redLedPin, LOW);
+    delay(200);
+    return;
+  }
+
+  // If counting down, update countdown
+  if (countingDown) {
+    unsigned long elapsed = millis() - countdownStartTime;
+    if (elapsed >= countdownTimeMs) {
+      // Countdown finished -> alarm
+      countingDown = false;
+      alarmActive = true;
+      showAlarmScreen();
+      return;
+    } else {
+      long msLeft = countdownTimeMs - elapsed;
+      showCountdown(msLeft);
+
+      // blink red LED during countdown
+      digitalWrite(redLedPin, HIGH);
+      delay(150);
+      digitalWrite(redLedPin, LOW);
+      delay(150);
+      return;
+    }
+  }
+
+  // If armed but not counting down, watch distance
+  long distance = getDistanceCm();
+  if (distance > 0) {
+    Serial.print("Distance: ");
+    Serial.print(distance);
+    Serial.println(" cm");
+  }
+
+  if (distance > 0 && distance <= triggerDistance) {
+    // Start countdown
+    countingDown = true;
+    countdownStartTime = millis();
+    // Red LED will be controlled in the countdown block
+  }
+
+  // Small delay so it doesn't spam the sensor
+  delay(100);
+}
+
+
 
