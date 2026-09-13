@@ -1,0 +1,120 @@
+const int ledPins[4] = {2, 3, 4, 5};
+const int buttonPins[4] = {8,9,10,11};
+const int buzzerPin = 6;
+
+int tones[4] = {262, 330, 392, 523}; // C, E, G, high C
+
+int sequence[100];
+int level = 0;
+
+void setup() {
+  for (int i = 0; i < 4; i++) 
+  {
+    pinMode(ledPins[i], OUTPUT);
+    pinMode(buttonPins[i], INPUT_PULLUP);
+  }
+  pinMode(buzzerPin, OUTPUT);
+
+  randomSeed(analogRead(A0));
+  startGame();
+}
+
+void loop() {
+  playSequence();
+
+  for (int i = 0; i <= level; i++) 
+  {
+    int userInput = waitForButtonPress();
+    flashLED(userInput);
+
+    if (userInput != sequence[i]) 
+    {
+      gameOver();
+      return;
+    }
+  }
+
+  delay(500);
+  level++;
+  sequence[level] = random(0, 4);
+  delay(500);
+}
+
+void startGame() 
+{
+  level = 0;
+  sequence[0] = random(0, 4);
+
+  // startup flash + sound
+  for (int i = 0; i < 4; i++) 
+  {
+    digitalWrite(ledPins[i], HIGH);
+    tone(buzzerPin, tones[i], 150);
+  }
+  delay(500);
+  for (int i = 0; i < 4; i++) 
+  {
+    digitalWrite(ledPins[i], LOW);
+  }
+  noTone(buzzerPin);
+  delay(500);
+}
+
+void playSequence() {
+  delay(500);
+  for (int i = 0; i <= level; i++) 
+  {
+    flashLED(sequence[i]);
+    delay(250);
+  }
+}
+
+void flashLED(int index) 
+{
+  digitalWrite(ledPins[index], HIGH);
+  tone(buzzerPin, tones[index]);  // play tone
+  delay(500);
+  digitalWrite(ledPins[index], LOW);
+  noTone(buzzerPin);              // stop tone
+}
+
+int waitForButtonPress() 
+{
+  while (true) {
+    for (int i = 0; i < 4; i++)
+    {
+      if (digitalRead(buttonPins[i]) == LOW) 
+      {
+        tone(buzzerPin, tones[i], 200); // quick beep on press
+        delay(200);
+        while (digitalRead(buttonPins[i]) == LOW) {}
+        return i;
+      }
+    }
+  }
+}
+
+void gameOver() {
+  // descending "fail" sound
+  int failTones[3] = {400, 300, 200};
+
+  for (int j = 0; j < 3; j++)
+  {
+    for (int i = 0; i < 4; i++) 
+    {
+      digitalWrite(ledPins[i], HIGH);
+    }
+    tone(buzzerPin, failTones[j]);
+    delay(300);
+
+    for (int i = 0; i < 4; i++) 
+    {
+      digitalWrite(ledPins[i], LOW);
+    }
+    noTone(buzzerPin);
+    delay(300);
+  }
+
+  delay(1000);
+  startGame();
+}
